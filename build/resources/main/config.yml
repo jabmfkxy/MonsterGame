@@ -1,0 +1,11 @@
+setting:
+  team_maxsize: 5
+
+teams:
+  team1:
+    name: "红队"
+    color: "RED"
+
+  team2:
+    name: "蓝队"
+    color: "BLUE"

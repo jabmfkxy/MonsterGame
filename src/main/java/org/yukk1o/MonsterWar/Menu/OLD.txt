@@ -1,0 +1,131 @@
+    private static final int MENU_ROWS = 4; // 4行=36槽位
+    private static final String MENU_TITLE = "队伍选择";
+
+    @Autowired
+    private TeamManager teamManager;
+
+    private final Map<String, Inventory> teamMenuCache = new ConcurrentHashMap<>();
+    private final ReentrantLock lock = new ReentrantLock();
+    private String team1Name ;
+    private String team2Name ;
+
+    private final GuiFactory guiFactory;
+
+    public TeamMenu(GuiFactory guiFactory) {
+        this.guiFactory = guiFactory;
+    }
+
+    /**
+     * 初始化队伍菜单槽位配置     * @param team1 第一队名称 (若为null则使用默认值)
+     * @param team2 第二队名称 (若为null则使用默认值)
+     */
+    public void initMenu(String team1, String team2){
+        this.team1Name = TeamDefaults.TEAM1_NAME;
+        this.team2Name = TeamDefaults.TEAM2_NAME;
+    }
+
+    public Inventory getMenuForPlayer(Player player){
+        if (!isMenuInitialized()){
+            Log.warn("菜单未初始化，使用默认配置");
+            initMenu(null, null);
+        }
+
+        MonsterWarTeam playerTeam = teamManager.getPlayerTeam(player);
+        String teamKey = playerTeam != null ? playerTeam.getName() : "DEFAULT";
+
+        // 从缓存获取或创建菜单
+        return teamMenuCache.computeIfAbsent(teamKey, k -> createTeamSpecificMenu(playerTeam));
+    }
+
+    /**
+     * 创建菜单 (缓存未命中)
+     */
+    private Inventory createTeamSpecificMenu(MonsterWarTeam playerTeam) {
+        String playerTeamName = playerTeam != null ? playerTeam.getName() : null;
+
+        Gui gui = guiFactory.create(Component.text(MENU_TITLE));
+    }
+
+        /**
+         * 填充队伍物品到菜单
+         */
+        private void  fillTeamItems(Inventory menu, String teamName, Material material, String playerTeamName){
+            Set<Integer> slots = teamsSlotMap.get(teamName);
+            if (slots == null || slots.isEmpty()){
+                Log.error("队伍" + teamName + "未配置槽位，无法填充物品");
+                return;
+            }
+
+            ItemStack teamItem = createTeamItem(teamName, material, playerTeamName);
+            slots.forEach(slot -> menu.setItem(slot, teamItem));
+        }
+
+        //生成菜单中的物品
+        private  ItemStack createTeamItem(String teamName, Material material,String playerTeamName){
+            MonsterWarTeam team = teamManager.getTeam(teamName);
+            if (team == null){
+                Log.error(ChatColorManager.error("队伍 " + teamName + " 不存在,无法创建物品"));
+                return new ItemStack(Material.BARRIER);
+            }
+
+            int currentSize = team.getMemberCount();
+            int maxSize = teamManager.getMaxTeamSize();
+            ChatColor teamColor = team.getColor();
+
+            ItemStack item = new ItemStack(material);
+            ItemMeta meta = item.getItemMeta();
+            if (meta == null) return item;
+            meta.setDisplayName(teamColor + teamName);
+
+            List<String> lore =new ArrayList<>();
+            lore.add(ChatColor.GRAY + "当前人数: " + currentSize + "/" + maxSize);
+
+            if (teamName.equals(playerTeamName)){
+                lore.add(ChatColor.GREEN + "你已经在本队");
+            } else lore.add(ChatColor.YELLOW + "点击加入本队");
+
+            meta.setLore(lore);
+            meta.setCustomModelData(10000);
+            item.setItemMeta(meta);
+
+            return item;
+        }
+
+
+
+    /**
+     * 刷新菜单缓存（队伍信息变化时调用）
+     */
+    public void refreshMenuCache(){
+        lock.lock();
+        try {
+            teamMenuCache.clear();
+            Log.info("队伍菜单缓存已刷新");
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    /**
+     * 检查菜单是否已初始化
+     * @return 若未初始化则返回false，否则返回true
+     */
+    private boolean isMenuInitialized() {
+        return !teamsSlotMap.isEmpty() && team1Name != null && team2Name != null;
+    }
+
+    /**
+     * 重置菜单配置
+     */
+    public void reset(){
+        slotLock.lock();
+        try{
+            teamsSlotMap.clear();
+            teamMenuCache.clear();  // 清理菜单缓存
+            team1Name = null;
+            team2Name = null;
+            Log.info("队伍菜单已重置");
+        } finally {
+            slotLock.unlock();
+        }
+    }
